@@ -1,0 +1,16 @@
+{
+  "name": "WifiLocator",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "cylon": "^1.2.0",
+    "cylon-ble": "^0.9.0",
+    "libnmap": "^0.2.23"
+  }
+}
