@@ -105,37 +105,201 @@ services and characteristics:
 */
 
 
+
+////////////////////////////
+// Device Manager
+////////////////////////////
+/*
+- register device
+---- pass event fn to run when device fails to report
+
+- register event fn for when all devices fail to report
+
+*/
+
+////////////////////////////
+// Single Device
+////////////////////////////
+var opts = {
+	debug : true,
+	// uuid for peripheral
+	uuid : '8044679a368b4caba5b1285cd9b7d8b7',
+	// must be discovered constantly within 2 minutes
+	tx_power : 81.2,
+	counters : {
+		idle : 0
+	},
+	time_timeout : 120000,// 2 secs
+	time_sampler : 42000,// 42 secs
+	timers : {
+		timeout : null,
+		//
+		sampler : null,
+		// track time device is off
+		idle : null
+	},
+	status : 'idle'//active, idle, paused
+};
+var data = {
+	micro_track : [],
+	track : [],
+	rssi : 0,
+	distance : 0
+};
+var methods = {
+	add_data : function (dataset) {
+		if (dataset.type === 'active') {
+			data.track.push(dataset);
+			
+			// is it enough to set getting closer/getting farther
+			
+			
+		} else if (dataset.type === 'idle') {
+		
+		}
+	},
+	calculate_accuracy : function (tx_power, rssi) {
+		if (rssi === 0) {
+			return -1.0; // if we cannot determine accuracy, return -1.
+		}
+
+		var ratio = rssi * 1.0 / tx_power;
+		if (ratio < 1.0) {
+			return Math.pow(ratio, 10);
+		}
+		
+		return (0.89976) * Math.pow(ratio, 7.7095) + 0.111;
+	},
+	average_rssi : function () {
+		// if there is micro data to average out, use that
+		// to replace rssi
+		// purge micro data
+		if (data.micro_track.length < 3) {
+			return data.micro_track.pop();
+		}
+		
+		if (opts.debug) console.log('average_rssi: length', data.micro_track.length);
+		
+		var sum = 0;
+		var average = 0;
+		for (var i = 0; i < data.micro_track.length; i++) {
+			sum += data.micro_track[i];
+		}
+		average = sum / data.micro_track.length;
+		
+		data.micro_track.length = 0;
+		
+		return average;
+	},
+	sample : function () {
+		if (opts.debug) console.log('sample:');
+		
+		data.rssi = methods.average_rssi();
+		data.distance = methods.calculate_accuracy(opts.tx_power, data.rssi);
+		
+		if (opts.debug) console.log('sample: rssi', data.rssi);
+		if (opts.debug) console.log('sample: distance', data.distance);
+		
+		// send to another method
+		// that will add data set using 'type' to
+		// appropriate stack
+		// and deal with history/db 
+		methods.add_data({ 'type' : 'active', 'rssi' : data.rssi, 'distance' : data.distance });
+		
+	},
+	timeout : function () {
+		if (opts.debug) console.log('timeout: device failed to report itself');
+		
+		opts.status = 'idle';
+		
+		if (opts.timers.sampler !== null) {
+			clearInterval(opts.timers.sampler);
+			opts.timers.sampler = null;
+		}
+		
+		opts.timers.idle = setInterval(function () {
+			opts.counters.idle++;
+		}, 1000);
+		
+		
+		// assume person left house
+		// unbind discover method
+		// update db and set time out on dev manag when to turn on discover back on
+	},
+	enable : function () {
+		if (opts.debug) console.log('enable:');
+		
+		opts.status = 'active';
+		
+		// kill idle counter
+		if (opts.timers.idle !== null) {
+			clearInterval(opts.timers.idle);
+			opts.timers.idle = null;
+			
+			methods.add_data({ 'type' : 'idle', 'duration' : opts.counters.idle });
+		}
+		
+		// reset counters
+		opts.counters.idle = 0;
+		
+		// reset data
+		data.micro_track.length = 0;
+		data.track.length = 0;
+		data.rssi = 0;
+		data.distance = 0;
+		
+		
+		// start sampler timer
+		opts.timers.sampler = setInterval(methods.sample, opts.time_sampler);
+	},
+	update : function (device) {
+		if (opts.debug) console.log('update:', device.advertisement.localName);
+		
+		// reset device timeout
+		if (opts.timers.timeout !== null) {
+			clearTimeout(opts.timers.timeout);
+		}
+		opts.timers.timeout = setTimeout(methods.timeout, opts.time_timeout);
+		
+		
+		if (opts.status === 'idle') {
+			methods.enable();
+		}
+		
+		data.micro_track.push(device.rssi);
+	}
+};
+
 Cylon.robot({
   connections: {
-    bluetooth: { adaptor: 'ble', uuid: '8044679a368b4caba5b1285cd9b7d8b7' }
+    //bluetooth: { adaptor: 'ble', uuid: '8044679a368b4caba5b1285cd9b7d8b7' }
+    bluetooth: { adaptor: 'central', module: __dirname + '/node_modules/cylon-ble' }//__dirname
   },
-
-  devices: {
-    battery: { driver: 'ble-battery-service' }
-    //deviceInfo: { driver: 'ble-device-information' }
-  },
+  //devices: {//deviceInfo: { driver: 'ble-device-information' }},
 
   work: function(my) {
     
-    my.battery.getBatteryLevel(function(err, data) {
-      if (!!err) {
-        console.log("Error: ", err);
-        return;
-      }
-
-      console.log("Data: ", data);
+    // add device and kickoff tick if it hasn't been started yet
+    my.connections.bluetooth.on('discover', function (peripheral) {
+		//peripheral.advertisement.localName,
+		//peripheral.uuid,
+		//peripheral.rssi
+    	
+    	// device discovered
+    	if (peripheral.uuid === opts.uuid) {
+    		methods.update(peripheral);
+    	}
     });
-    
     
     /*
     //getModelNumber, getSystemId, getHardwareRevision, getFirmwareRevision, getPnPId
     my.deviceInfo.getManufacturerName(function(err, data) {
 		if (!!err) {
-		  console.log("Error: ", err);
+		  console.log('Error: ', err);
 		  return;
 		}
 		
-		console.log("Data: ", data);
+		console.log('Data: ', data);
 	});
 	*/
   }
