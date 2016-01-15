@@ -123,13 +123,17 @@ services and characteristics:
 var opts = {
 	debug : true,
 	// uuid for peripheral
+	uuids : [
+		'67890d8f4b1c4d0ea42a40afe493d6fb',
+		'8044679a368b4caba5b1285cd9b7d8b7'
+	],
 	uuid : '8044679a368b4caba5b1285cd9b7d8b7',
-	// must be discovered constantly within 2 minutes
 	tx_power : 81.2,
 	counters : {
 		idle : 0
 	},
-	time_timeout : 120000,// 2 secs
+	// must be discovered constantly within 2 minutes
+	time_timeout : 300000,// 5 mins
 	time_sampler : 42000,// 42 secs
 	timers : {
 		timeout : null,
@@ -162,8 +166,8 @@ var methods = {
 		if (rssi === 0) {
 			return -1.0; // if we cannot determine accuracy, return -1.
 		}
-
-		var ratio = rssi * 1.0 / tx_power;
+		var open_space_constant = 1.0;// maybe not equal to open space
+		var ratio = rssi * open_space_constant / tx_power;
 		if (ratio < 1.0) {
 			return Math.pow(ratio, 10);
 		}
@@ -174,6 +178,8 @@ var methods = {
 		// if there is micro data to average out, use that
 		// to replace rssi
 		// purge micro data
+		if (!data.micro_track.length) return 0;
+		
 		if (data.micro_track.length < 3) {
 			return data.micro_track.pop();
 		}
@@ -193,6 +199,10 @@ var methods = {
 	},
 	sample : function () {
 		if (opts.debug) console.log('sample:');
+		
+		//if (data.micro_track.length < 5) {
+			//return;
+		//}
 		
 		data.rssi = methods.average_rssi();
 		data.distance = methods.calculate_accuracy(opts.tx_power, data.rssi);
@@ -286,7 +296,7 @@ Cylon.robot({
 		//peripheral.rssi
     	
     	// device discovered
-    	if (peripheral.uuid === opts.uuid) {
+    	if (opts.uuids.indexOf(peripheral.uuid) !== -1) {
     		methods.update(peripheral);
     	}
     });
